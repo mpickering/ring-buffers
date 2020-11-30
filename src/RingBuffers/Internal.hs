@@ -66,11 +66,14 @@ capacity (RingBuffer buf _) = Contiguous.sizeMutable buf
 filledLength :: (Contiguous arr, Element arr a)
   => RingBuffer arr a
   -> IO Int
-filledLength rb = withRing rb $ \_ rs@(RingState full pos) -> if full
-  then do
-    cap <- capacity rb
-    pure (rs,cap)
-  else pure (rs,pos)
+filledLength rb = withRing rb (filledLength_ rb)
+
+filledLength_ rb = \_ rs@(RingState full pos) ->
+  if full
+    then do
+      cap <- capacity rb
+      pure (rs,cap)
+    else pure (rs,pos)
 {-# inline filledLength #-}
 
 latest :: (Contiguous arr, Element arr a)
@@ -132,16 +135,17 @@ foldMap :: (Contiguous arr, Element arr a, Monoid b)
   => RingBuffer arr a
   -> (a -> IO b)
   -> IO b
-foldMap rb action = withRing rb $ \ba bs -> do
-  n <- filledLength rb
-  let go !ix !acc = if ix < n
-        then do
-          v <- Contiguous.read ba ix
-          m <- action v
-          go (ix + 1) (acc <> m)
-        else
-          pure (bs, acc)
-  go 0 mempty
+foldMap rb action = do
+  withRing rb $ \ba bs -> do
+    n <- snd <$> filledLength_ rb ba bs
+    let go !ix !acc = if ix < n
+          then do
+            v <- Contiguous.read ba ix
+            m <- action v
+            go (ix + 1) (acc <> m)
+          else
+            pure (bs, acc)
+    go 0 mempty
 {-# inline foldMap #-}
 
 toList :: (Contiguous arr, Element arr a)
